@@ -1,6 +1,7 @@
+'use client';
+
 import { useState, useEffect } from 'react';
-import { useAccount, useContractRead } from 'wagmi';
-import { ethers } from 'ethers';
+import { useAccount, useReadContract, usePublicClient } from 'wagmi';
 import { SubscriptionToken__factory } from '../contracts/typechain-types';
 import { SUBSCRIPTION_TOKEN_ADDRESS } from '../config';
 
@@ -15,39 +16,48 @@ type Token = {
 
 export default function TokenList() {
   const { address } = useAccount();
+  const publicClient = usePublicClient();
   const [tokens, setTokens] = useState<Token[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Get token contract instance
-  const tokenContract = {
-    address: SUBSCRIPTION_TOKEN_ADDRESS,
-    abi: SubscriptionToken__factory.abi,
-  };
+  // Get token contract ABI
+  const tokenAbi = SubscriptionToken__factory.abi;
 
   // Get token balance for the connected wallet
-  const { data: balance } = useContractRead({
-    ...tokenContract,
+  const { data: balance } = useReadContract({
+    address: SUBSCRIPTION_TOKEN_ADDRESS,
+    abi: tokenAbi,
     functionName: 'balanceOf',
-    args: [address],
-    watch: true,
+    args: [address || '0x'],
+    query: {
+      enabled: !!address,
+    },
   });
 
   useEffect(() => {
     const fetchTokens = async () => {
       try {
-        if (!address || !balance) return;
+        if (!address || !balance || !publicClient) return;
 
-        const tokenCount = balance.toNumber();
-        const tokenPromises = [];
+        const tokenCount = Number(balance);
+        const tokenPromises: Promise<Token>[] = [];
 
         // Fetch token details for each token owned by the user
         for (let i = 0; i < tokenCount; i++) {
-          tokenPromises.push(
-            new Promise(async (resolve) => {
-              try {
-                const tokenId = await tokenContract.methods.tokenOfOwnerByIndex(address, i).call();
-                const tokenURI = await tokenContract.methods.tokenURI(tokenId).call();
+          const tokenId = await publicClient.readContract({
+            address: SUBSCRIPTION_TOKEN_ADDRESS,
+            abi: tokenAbi,
+            functionName: 'tokenOfOwnerByIndex',
+            args: [address, BigInt(i)],
+          });
+
+          const tokenURI = await publicClient.readContract({
+            address: SUBSCRIPTION_TOKEN_ADDRESS,
+            abi: tokenAbi,
+            functionName: 'tokenURI',
+            args: [tokenId],
+          });
                 const tokenData = JSON.parse(atob(tokenURI.split(',')[1]));
                 
                 const tokenBalance = await tokenContract.methods.balanceOf(address, tokenId).call();

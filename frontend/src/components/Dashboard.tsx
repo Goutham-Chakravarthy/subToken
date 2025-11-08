@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { useAccount } from 'wagmi';
-import { CreateTokenForm } from './CreateTokenForm';
-import { TokenList } from './TokenList';
-import { LendingDashboard } from './LendingDashboard';
+import CreateTokenForm from './CreateTokenForm';
+import TokenList from './TokenListNew';
+import LendingDashboard from './LendingDashboard';
 
 export function Dashboard() {
   const { address } = useAccount();

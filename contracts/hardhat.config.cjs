@@ -48,7 +48,8 @@ const config = {
     target: "ethers-v6",
     alwaysGenerateOverloads: false,
     dontOverrideCompile: false,
-    externalArtifacts: [],
+    externalArtifacts: ["node_modules/@openzeppelin/contracts/build/contracts/*.json"],
+    discriminateTypes: true,
   },
   defaultNetwork: "hardhat",
   networks: {

@@ -95,8 +95,9 @@ contract SubscriptionToken is ERC1155, Ownable, Pausable, ReentrancyGuard {
         string memory _symbol,
         string memory baseURI_,
         address initialOwner
-    ) ERC1155(baseURI_) Ownable(initialOwner) {
+    ) ERC1155(baseURI_) {
         require(initialOwner != address(0), "Invalid owner address");
+        _transferOwnership(initialOwner);
         name = _name;
         symbol = _symbol;
         _baseURI = baseURI_;
@@ -317,7 +318,7 @@ contract SubscriptionToken is ERC1155, Ownable, Pausable, ReentrancyGuard {
         uint256[] memory ids,
         uint256[] memory amounts,
         bytes memory data
-    ) internal override whenNotPaused {
+    ) internal virtual override whenNotPaused {
         super._beforeTokenTransfer(operator, from, to, ids, amounts, data);
         
         // Skip minting and burning checks
@@ -333,78 +334,6 @@ contract SubscriptionToken is ERC1155, Ownable, Pausable, ReentrancyGuard {
             }
         }
     }
-    }
-    
-    function createToken(
-        string memory serviceId,
-        uint256 timeUnit,
-        uint256 expiryTime,
-        uint256 amount
-    ) external returns (uint256) {
-        require(timeUnit > 0, "Time unit must be greater than 0");
-        require(expiryTime > block.timestamp, "Expiry time must be in the future");
-        
-        // Generate a unique token ID
-        uint256 tokenId = uint256(
-            keccak256(
-                abi.encodePacked(
-                    msg.sender,
-                    block.timestamp,
-                    serviceId
-                )
-            )
-        );
-        
-        // Store token info
-        tokenInfo[tokenId] = TokenInfo({
-            creator: msg.sender,
-            serviceId: serviceId,
-            timeUnit: timeUnit,
-            expiryTime: expiryTime,
-            isActive: true
-        });
-        
-        // Mint tokens to the creator
-        _mint(msg.sender, tokenId, amount, "");
-        
-        emit TokenCreated(
-            tokenId,
-            msg.sender,
-            serviceId,
-            timeUnit,
-            expiryTime
-        );
-        
-        return tokenId;
-    }
-    
-    /**
-     * @dev Burns tokens from the caller's account
-     * @param tokenId ID of the token to burn
-     * @param amount Amount of tokens to burn
-     */
-    function burn(uint256 tokenId, uint256 amount) external {
-        _burn(msg.sender, tokenId, amount);
-        emit TokenBurned(tokenId, msg.sender, amount);
-    }
-    
-    /**
-     * @dev Returns the URI for a given token ID
-     * @param tokenId ID of the token to query
-     * @return URI for the token metadata
-     */
-    function uri(uint256 tokenId) public view override returns (string memory) {
-        require(tokenInfo[tokenId].creator != address(0), "Token does not exist");
-        return string(abi.encodePacked(_baseURI, tokenId.toString()));
-    }
-    
-    /**
-     * @dev Updates the base URI for all tokens
-     * @param newBaseURI The new base URI
-     */
-    function setBaseURI(string memory newBaseURI) external onlyOwner {
-        _baseURI = newBaseURI;
-    }
     
     /**
      * @dev Checks if a token is valid (not expired and active)
@@ -414,26 +343,5 @@ contract SubscriptionToken is ERC1155, Ownable, Pausable, ReentrancyGuard {
     function isValid(uint256 tokenId) public view returns (bool) {
         TokenInfo memory info = tokenInfo[tokenId];
         return info.isActive && block.timestamp <= info.expiryTime;
-    }
-    
-    /**
-     * @dev Hook that is called before any token transfer
-     */
-    function _beforeTokenTransfer(
-        address operator,
-        address from,
-        address to,
-        uint256[] memory ids,
-        uint256[] memory amounts,
-        bytes memory data
-    ) internal virtual override {
-        super._beforeTokenTransfer(operator, from, to, ids, amounts, data);
-        
-        // Check if tokens are valid before transfer
-        if (from != address(0)) { // Not minting
-            for (uint256 i = 0; i < ids.length; ++i) {
-                require(isValid(ids[i]), "Token is not valid (expired or inactive)");
-            }
-        }
     }
 }

@@ -1,16 +1,19 @@
 'use client';
 
-import { useState } from 'react';
-import { useAccount, useSigner } from 'wagmi';
-import { ethers } from 'ethers';
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { parseEther } from 'viem';
 import { toast } from 'react-hot-toast';
-import { SubscriptionToken__factory } from '../contracts/typechain-types';
+import { SubscriptionToken__factory } from '@/contracts/typechain-types';
+import { SUBSCRIPTION_TOKEN_ADDRESS } from '../config';
 
 interface CreateTokenFormProps {
   onSuccess?: () => void;
 }
 
-export function CreateTokenForm({ onSuccess }: CreateTokenFormProps) {
+export default function CreateTokenForm({ onSuccess }: CreateTokenFormProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -21,12 +24,60 @@ export function CreateTokenForm({ onSuccess }: CreateTokenFormProps) {
   });
 
   const { address } = useAccount();
-  const { data: signer } = useSigner();
+  const { 
+    writeContract: createToken, 
+    isPending: isCreating, 
+    data: txHash,
+    error
+  } = useWriteContract({
+    mutation: {
+      onSuccess: () => {
+        // The success handler will be called after the transaction is confirmed
+      },
+    },
+  });
+
+  // Handle transaction confirmation
+  const { 
+    isLoading: isConfirming, 
+    isSuccess: isConfirmed,
+    isError: isTxError,
+    error: txError
+  } = useWaitForTransactionReceipt({
+    hash: txHash,
+  });
+
+  // Handle success and error states with useEffect
+  useEffect(() => {
+    if (isConfirmed) {
+      toast.success('Token created successfully!');
+      setFormData({
+        serviceId: '',
+        timeUnit: 86400,
+        expiryDate: '',
+        totalSupply: '',
+      });
+      if (onSuccess) onSuccess();
+      setIsOpen(false);
+      setIsLoading(false);
+    }
+  }, [isConfirmed, onSuccess]);
+
+  // Handle errors
+  useEffect(() => {
+    if (error || txError) {
+      const err = error || txError;
+      console.error('Error creating token:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      toast.error(`Failed to create token: ${errorMessage}`);
+      setIsLoading(false);
+    }
+  }, [error, txError]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!signer || !address) {
+    if (!address) {
       toast.error('Please connect your wallet');
       return;
     }
@@ -37,37 +88,27 @@ export function CreateTokenForm({ onSuccess }: CreateTokenFormProps) {
       // Convert form data to appropriate types
       const timeUnit = Number(formData.timeUnit);
       const expiryTimestamp = Math.floor(new Date(formData.expiryDate).getTime() / 1000);
-      const totalSupply = ethers.utils.parseEther(formData.totalSupply);
+      const totalSupply = formData.totalSupply;
 
-      // TODO: Deploy or interact with the SubscriptionToken contract
-      // This is a placeholder - you'll need to replace it with your actual contract interaction
-      const tokenContract = SubscriptionToken__factory.connect(
-        '0xYourTokenContractAddress',
-        signer
-      );
-
-      const tx = await tokenContract.createToken(
-        formData.serviceId,
-        timeUnit,
-        expiryTimestamp,
-        totalSupply
-      );
-
-      await tx.wait();
-      
-      toast.success('Token created successfully!');
-      setFormData({
-        serviceId: '',
-        timeUnit: 86400,
-        expiryDate: '',
-        totalSupply: '',
+      // Create token
+      await createToken({
+        address: SUBSCRIPTION_TOKEN_ADDRESS,
+        abi: SubscriptionToken__factory.abi,
+        functionName: 'createToken',
+        args: [
+          formData.serviceId,
+          timeUnit,
+          expiryTimestamp,
+          parseEther(totalSupply),
+          address // recipient
+        ]
       });
       
-      if (onSuccess) onSuccess();
+      // The rest of the success handling is done in the useWaitForTransactionReceipt hook
       setIsOpen(false);
-    } catch (error: any) {
-      console.error('Error creating token:', error);
-      toast.error(error?.message || 'Failed to create token');
+    } catch (err) {
+      console.error('Error creating token:', err);
+      toast.error('Failed to create token');
     } finally {
       setIsLoading(false);
     }

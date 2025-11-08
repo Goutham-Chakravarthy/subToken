@@ -1,7 +1,11 @@
+'use client';
+
+'use client';
+
 import { useState, useEffect } from 'react';
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { ethers } from 'ethers';
-import { LendingEscrow__factory, SubscriptionToken__factory } from '../../../contracts/typechain-types/factories/contracts';
+import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
+import { parseEther, formatEther } from 'viem';
+import { LendingEscrow__factory, SubscriptionToken__factory } from '@/contracts/typechain-types';
 import { LENDING_ESCROW_ADDRESS, SUBSCRIPTION_TOKEN_ADDRESS } from '../config';
 
 declare global {
@@ -29,16 +33,9 @@ export default function LendingDashboard() {
   const [amount, setAmount] = useState('');
   const [rate, setRate] = useState('');
 
-  // Contract instances
-  const lendingEscrow = {
-    address: LENDING_ESCROW_ADDRESS,
-    abi: LendingEscrow__factory.abi,
-  };
-
-  const tokenContract = {
-    address: SUBSCRIPTION_TOKEN_ADDRESS,
-    abi: SubscriptionToken__factory.abi,
-  };
+  // Contract ABIs
+  const lendingEscrowAbi = LendingEscrow__factory.abi;
+  const tokenAbi = SubscriptionToken__factory.abi;
 
   // Get all listings
   const { data: listingCount } = useReadContract({
@@ -54,7 +51,8 @@ export default function LendingDashboard() {
         setSelectedToken('');
         setAmount('');
         setRate('');
-        fetchListings();
+        // Use setTimeout to ensure the transaction is mined before refetching
+        setTimeout(() => fetchListings(), 2000);
       },
     },
   });
@@ -71,8 +69,8 @@ export default function LendingDashboard() {
             functionName: 'createListing',
             args: [
               selectedToken, 
-              ethers.utils.parseEther(amount), 
-              ethers.utils.parseEther(rate)
+              parseEther(amount), 
+              parseEther(rate)
             ],
           });
         }
@@ -89,44 +87,46 @@ export default function LendingDashboard() {
     hash: approveTxHash,
   });
 
+  const publicClient = usePublicClient();
+  
   const fetchListings = async () => {
     try {
-      if (!listingCount) return;
+      if (!listingCount || !publicClient) {
+        setLoading(false);
+        return;
+      }
 
       const count = Number(listingCount);
-      const listingPromises = [];
-
-      // Create a provider
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const contract = new ethers.Contract(
-        LENDING_ESCROW_ADDRESS,
-        LendingEscrow__factory.abi,
-        provider
-      );
+      const listingPromises: Promise<Listing | null>[] = [];
 
       for (let i = 1; i <= count; i++) {
         listingPromises.push(
-          new Promise(async (resolve) => {
+          (async (index: number): Promise<Listing | null> => {
             try {
-              const listing = await contract.listings(i);
-              if (listing.isActive) {
-                resolve({
-                  id: i.toString(),
+              const listing = await publicClient.readContract({
+                address: LENDING_ESCROW_ADDRESS,
+                abi: LendingEscrow__factory.abi,
+                functionName: 'listings',
+                args: [BigInt(index)]
+              }) as any; // Type assertion as the exact return type is complex
+              
+              if (listing && listing.isActive) {
+                return {
+                  id: index.toString(),
                   tokenId: listing.tokenId.toString(),
-                  lender: listing.lender,
-                  amount: ethers.utils.formatEther(listing.amount.toString()),
-                  rate: ethers.utils.formatEther(listing.rate.toString()),
-                  available: ethers.utils.formatEther(listing.available.toString()),
+                  lender: listing.lender as string,
+                  amount: formatEther(BigInt(listing.amount.toString())),
+                  rate: formatEther(BigInt(listing.rate.toString())),
+                  available: formatEther(BigInt(listing.available.toString())),
                   isActive: listing.isActive,
-                });
-              } else {
-                resolve(null);
+                };
               }
+              return null;
             } catch (err) {
-              console.error(`Error fetching listing ${i}:`, err);
-              resolve(null);
+              console.error(`Error fetching listing ${index}:`, err);
+              return null;
             }
-          })
+          })(i)
         );
       }
 
@@ -167,8 +167,8 @@ export default function LendingDashboard() {
         functionName: 'createListing',
         args: [
           selectedToken,
-          ethers.utils.parseEther(amount).toString(),
-          ethers.utils.parseEther(rate).toString()
+          parseEther(amount),
+          parseEther(rate)
         ],
       });
     } catch (err) {

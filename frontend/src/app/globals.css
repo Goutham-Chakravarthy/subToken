@@ -79,3 +79,29 @@ body {
 .text-gradient {
   @apply bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-500;
 }
+
+/* Landing theme extensions */
+.gradient-bg {
+  @apply bg-gradient-to-br from-blue-900 via-black to-gray-900;
+}
+
+.btn-primary-landing {
+  @apply bg-gradient-to-r from-teal-500 to-teal-600 text-white font-semibold py-3 px-6 rounded-xl shadow-lg transition-transform duration-200 hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400;
+}
+
+.btn-secondary-landing {
+  @apply bg-gray-800 text-white font-semibold py-3 px-6 rounded-xl border border-gray-700 hover:border-teal-500/60 transition-transform duration-200 hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400;
+}
+
+.card-hover {
+  @apply bg-gray-800/70 backdrop-blur rounded-xl p-6 border border-gray-700/60 transition-transform duration-200 hover:-translate-y-2 hover:shadow-xl;
+}
+
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(30px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s ease-out forwards;
+}

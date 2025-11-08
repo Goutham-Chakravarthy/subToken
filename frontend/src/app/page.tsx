@@ -11,9 +11,9 @@ export default function Home() {
     <main>
       <Header />
       <Hero />
-      <FeaturesGrid />
+      {/* <FeaturesGrid /> */}
       <HowItWorks />
-      <Testimonials />
+      {/* <Testimonials /> */}
       <CTASection />
       <Footer />
     </main>

@@ -1,8 +1,13 @@
 'use client';
 
 import { ConnectButton as RainbowConnectButton } from '@rainbow-me/rainbowkit';
+import { useRouter } from 'next/navigation';
+import { useAccount } from 'wagmi';
 
 export function ConnectButton() {
+  const router = useRouter();
+  const { isConnected } = useAccount();
+
   return (
     <RainbowConnectButton.Custom>
       {({ 
@@ -16,6 +21,14 @@ export function ConnectButton() {
       }) => {
         const ready = mounted && authenticationStatus !== 'loading';
         const connected = ready && account && chain && (!authenticationStatus || authenticationStatus === 'authenticated');
+
+        const handleConnectClick = () => {
+          if (!isConnected) {
+            router.push('/connect');
+          } else {
+            openConnectModal();
+          }
+        };
 
         return (
           <div
@@ -32,7 +45,7 @@ export function ConnectButton() {
               if (!connected) {
                 return (
                   <button
-                    onClick={openConnectModal}
+                    onClick={handleConnectClick}
                     type="button"
                     className="btn-primary"
                   >

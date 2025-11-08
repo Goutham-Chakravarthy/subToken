@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAccount, useReadContract, usePublicClient } from 'wagmi';
+import { useAccount, usePublicClient } from 'wagmi';
 import { SubscriptionToken__factory } from '@/contracts/typechain-types';
 import { SUBSCRIPTION_TOKEN_ADDRESS } from '../config';
 
@@ -24,62 +24,84 @@ export default function TokenList() {
   // Get token contract ABI
   const tokenAbi = SubscriptionToken__factory.abi;
 
-  // Get token balance for the connected wallet
-  const { data: balance } = useReadContract({
-    address: SUBSCRIPTION_TOKEN_ADDRESS,
-    abi: tokenAbi,
-    functionName: 'balanceOf',
-    args: [address || '0x'],
-    query: {
-      enabled: !!address,
-    },
-  });
+  // Note: ERC1155 balanceOf requires (account, id). We'll query per tokenId below.
 
   useEffect(() => {
     const fetchTokens = async () => {
       try {
-        if (!address || !balance || !publicClient) return;
+        if (!address || !publicClient) return;
 
-        const tokenCount = Number(balance);
-        const tokenPromises: Promise<Token>[] = [];
+        const candidates: bigint[] = [];
+        const maxToCheck = 100; // reasonable upper bound for now
+        for (let id = 1; id <= maxToCheck; id++) {
+          // Read tokenInfo to see if token exists (creator != 0x0)
+          try {
+            const info = await publicClient.readContract({
+              address: SUBSCRIPTION_TOKEN_ADDRESS,
+              abi: tokenAbi,
+              functionName: 'tokenInfo',
+              args: [BigInt(id)],
+            }) as readonly [
+              `0x${string}`, // creator
+              string,        // serviceId
+              bigint,        // timeUnit
+              bigint,        // expiryTime
+              boolean,       // isActive
+              bigint,        // maxSupply
+              bigint,        // currentSupply
+              bigint         // price
+            ];
 
-        for (let i = 0; i < tokenCount; i++) {
-          const tokenId = await publicClient.readContract({
+            const creator = info[0];
+            if (creator && creator !== '0x0000000000000000000000000000000000000000') {
+              candidates.push(BigInt(id));
+            }
+          } catch {
+            // stop early if tokenInfo revert suggests id is out of range
+            break;
+          }
+        }
+
+        const tokenPromises: Promise<Token | null>[] = candidates.map(async (tokenId) => {
+          const info = await publicClient.readContract({
             address: SUBSCRIPTION_TOKEN_ADDRESS,
             abi: tokenAbi,
-            functionName: 'tokenOfOwnerByIndex',
-            args: [address, BigInt(i)],
-          });
-
-          const tokenURI = await publicClient.readContract({
-            address: SUBSCRIPTION_TOKEN_ADDRESS,
-            abi: tokenAbi,
-            functionName: 'tokenURI',
+            functionName: 'tokenInfo',
             args: [tokenId],
-          });
+          }) as readonly [
+            `0x${string}`,
+            string,
+            bigint,
+            bigint,
+            boolean,
+            bigint,
+            bigint,
+            bigint
+          ];
 
-          // Parse token URI (assuming it's a base64 encoded JSON)
-          const tokenData = JSON.parse(atob(tokenURI.split(',')[1]));
-          
-          // Get token balance
-          const tokenBalance = await publicClient.readContract({
+          const balanceOfToken = await publicClient.readContract({
             address: SUBSCRIPTION_TOKEN_ADDRESS,
             abi: tokenAbi,
             functionName: 'balanceOf',
-            args: [address, tokenId],
-          });
+            args: [address as `0x${string}`, tokenId],
+          }) as bigint;
 
-          tokenPromises.push(Promise.resolve({
+          if (balanceOfToken === BigInt(0)) return null;
+
+          const [, serviceId, timeUnit, expiryTime, , , currentSupply] = info;
+
+          return {
             id: tokenId.toString(),
-            serviceId: tokenData.serviceId || '',
-            timeUnit: tokenData.timeUnit || 0,
-            expiryDate: tokenData.expiryDate || 0,
-            totalSupply: tokenData.totalSupply || '0',
-            balance: tokenBalance?.toString() || '0',
-          }));
-        }
+            serviceId,
+            timeUnit: Number(timeUnit),
+            expiryDate: Number(expiryTime),
+            totalSupply: currentSupply.toString(),
+            balance: balanceOfToken.toString(),
+          };
+        });
 
-        const fetchedTokens = await Promise.all(tokenPromises);
+        const fetched = (await Promise.all(tokenPromises)).filter(Boolean) as Token[];
+        const fetchedTokens = fetched;
         setTokens(fetchedTokens);
         setLoading(false);
       } catch (err) {
@@ -90,7 +112,7 @@ export default function TokenList() {
     };
 
     fetchTokens();
-  }, [address, balance, publicClient, tokenAbi]);
+  }, [address, publicClient, tokenAbi]);
 
   if (loading) {
     return <div>Loading tokens...</div>;
